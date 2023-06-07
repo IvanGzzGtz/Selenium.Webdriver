@@ -24,8 +24,18 @@ def select_team(team_index):
     driver = webdriver.Chrome(ChromeDriverManager().install(), options=options)    
     website = 'https://www.nba.com/players'   
     driver.get(website)
-    teams = driver.find_element(By.XPATH, '//Select[@name="TEAM_NAME"]')
-    all_teams = Select(teams)
+    teams_select = driver.find_element(By.XPATH, '//Select[@name="TEAM_NAME"]')
+    # Select the teams tag
+    teams = driver.find_elements(By.TAG_NAME, 'Select')
+    teams_names = teams[1]
+    # Retrieve all the option (teams) elements within the select tag
+    option_elements = teams_names.find_elements(By.TAG_NAME, 'option')
+    
+    # Extract the option values and store them in a list
+    team_names = [option.get_attribute('value') for option in option_elements]
+
+    # Assign the teams list to a varibale called team_names
+    all_teams = Select(teams_select)
     all_teams.select_by_index(team_index)
 
     #Get players URL based on the selected team
@@ -42,6 +52,8 @@ def select_team(team_index):
         player = player.text
         res = re.sub(r'[^a-zA-Z]', ' ', player)
         players_names.append(res)
+
+    players_names = [item.replace(" ", "_") for item in players_names]
 
     #Get the playerID and the website for the stats of that player
     j = 0
@@ -127,15 +139,63 @@ def select_team(team_index):
             df['date'] = pd.to_datetime(dict(year = df.year, month = df.monthnum, day = df.day))
             df['vs'] = df['MATCH UP'].str.strip().str[-3:]
             df['homeoraway'] = df['MATCH UP'].str.strip().str[-5:-4]
-            df.drop(['day','year','monthnum','MATCH UP',"FGM","FGA","FG%","3P%","FTM","FTA","FT%","OREB","DREB","PF","+/-"],axis = 1,  inplace = True)
-            print(df)
-            ''' 
-            df.to_csv('{}.csv'.format(players_names[j]))
+            df['team'] = "{}".format(team_names[team_index])
+            df['player'] = "{}".format(players_names[j])
             j += 1
-            '''
+
+            df.drop(['year','monthnum','MATCH UP',"FGM","FGA","FG%","3P%","FTM","FTA","FT%","OREB","DREB","PF","+/-"],axis = 1,  inplace = True)
+                        # Connect to the MySQL server
+            cnx = mysql.connector.connect(
+                    host="localhost",
+                    user="root",
+                    password="uzvi2ADTdSMA44Dn1Bcu"
+                )
+                # Create a new database if it doesn't exist
+            database_name = "NBA"
+            cursor = cnx.cursor()
+            cursor.execute(f"CREATE DATABASE IF NOT EXISTS `{database_name}`")
+            cursor.close()
+
+            # Switch to the newly created database
+            cnx.database = database_name
+
+            # Create a table and insert data from a DataFrame
+            table_name = "{}".format(team_names[team_index])
+
+            # Create the table
+            create_table_query = f"CREATE TABLE IF NOT EXISTS `{table_name}` (WL VARCHAR(1), MIN INT, PTS INT, 3PM INT, 3PA INT, REB INT, AST INT, STL INT, BLK INT, TOV INT, day INT, date DATE, vs VARCHAR(5), homeoraway VARCHAR(1), team VARCHAR(15), player VARCHAR(50))"
+            cursor = cnx.cursor()
+            try:
+                cursor.execute(create_table_query)
+            except Exception as e:
+                # Handle the error
+                print("An error occurred:", str(e))
+                # Or you can choose to do nothing and simply pass
+                pass
+            cursor.close()
+
+            # Insert the DataFrame data into the table
+            insert_query = f"INSERT INTO `{table_name}` (WL, MIN, PTS, 3PM, 3PA, REB, AST, STL, BLK, TOV, day, date, vs, homeoraway, team, player) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)"
+            cursor = cnx.cursor()
+            for _, row in df.iterrows():
+                try:
+                    cursor.execute(insert_query, (row["W/L"], row["MIN"], row["PTS"], row["3PM"], row["3PA"], row["REB"], row["AST"], row["STL"], row["BLK"], row["TOV"], row["day"], row["date"], row["vs"],  row["homeoraway"], row["team"],  row["player"]))
+                except Exception as e:
+                    print("An error occurred:", str(e))
+                    pass            
+            cursor.close()
+
+            # Commit the changes and close the connection
+            cnx.commit()
+            cnx.close()
+
+
+
     driver.close()
 
 
-
-
-select_team(1)
+i=1
+for team in range(30):
+    select_team(i)
+    i+=1
+    
